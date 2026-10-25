@@ -39,10 +39,14 @@ pipeline {
                 sh '''
                     trivy fs --scanners vuln,secret --no-progress \
                       --format table -o trivy-fs-report.txt .
-        
-                    trivy fs --scanners vuln,secret --no-progress \
-                      --severity CRITICAL --ignore-unfixed --exit-code 1 .
                 '''
+                // KAN-2: temporary risk acceptance (Spring Boot 2.5.6 CVEs). Review by <date+30d>.
+                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                    sh '''
+                        trivy fs --scanners vuln,secret --no-progress \
+                          --severity CRITICAL --ignore-unfixed --exit-code 1 .
+                    '''
+                }
             }
             post {
                 always {
