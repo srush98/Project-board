@@ -34,6 +34,22 @@ pipeline {
                 }
             }
         }
+        stage('Trivy FS Scan') {
+            steps {
+                sh '''
+                    trivy fs --scanners vuln,secret --no-progress \
+                      --format table -o trivy-fs-report.txt .
+        
+                    trivy fs --scanners vuln,secret --no-progress \
+                      --severity CRITICAL --ignore-unfixed --exit-code 1 .
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'trivy-fs-report.txt', allowEmptyArchive: true
+                }
+    }
+}
         stage('Build') {
             steps { sh 'mvn -B package -DskipTests' }
         }
