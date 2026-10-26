@@ -38,6 +38,7 @@ pipeline {
         IMAGE_NAME = 'srush1798/boardgame'
         NOTIFY_TO  = 'srushtijiyani2013@gmail.com'
         DEPLOYED   = 'false'
+        JIRA_SITE = 'srushtisworkspace-40179857.atlassian.net'
     }
 
     stages {
@@ -274,6 +275,14 @@ pipeline {
                     exit 1
                 '''
             }
+            post {
+                always {
+                    jiraSendDeploymentInfo site: "${env.JIRA_SITE}",
+                                           environmentId: 'eks-boardgame-prod',
+                                           environmentName: 'production',
+                                           environmentType: 'production'
+                }
+            }
         }
 
         stage('KubeAudit (live)') {
@@ -297,6 +306,7 @@ pipeline {
                     junit allowEmptyResults: true, testResults: 'target/surefire-reports/*.xml'
                     archiveArtifacts artifacts: 'trivy-*.txt, kubeaudit-*.txt, rendered/*.yaml',
                                      allowEmptyArchive: true
+                    jiraSendBuildInfo site: "${env.JIRA_SITE}"
                 }
                 success {
                     notifyBuild('SUCCESS', 'green')
