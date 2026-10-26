@@ -91,13 +91,10 @@ pipeline {
                     trivy fs --scanners vuln,secret --no-progress \
                       --format table -o trivy-fs-report.txt .
                 '''
-                // KAN-2: temporary risk acceptance (Spring Boot 2.5.6 CVEs). Review by 2026-11-24.
-                // Soft gate: marks the build UNSTABLE instead of failing it.
-                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-                    sh '''
-                        trivy fs --scanners vuln,secret --no-progress \
-                          --severity CRITICAL --ignore-unfixed --exit-code 1 .
-                    '''
+                sh '''
+                    trivy fs --scanners vuln,secret --no-progress \
+                        --severity CRITICAL --ignore-unfixed --exit-code 1 .
+                '''
                 }
             }
         }
@@ -137,7 +134,7 @@ pipeline {
                       -o trivy-image-report.txt ${IMAGE_NAME}:${IMAGE_TAG}
 
                     # Hard gate on OS packages; Java library CVEs are covered by KAN-2
-                    trivy image --no-progress --pkg-types os \
+                    trivy image --no-progress \
                       --severity CRITICAL --ignore-unfixed --exit-code 1 \
                       ${IMAGE_NAME}:${IMAGE_TAG}
                 '''
