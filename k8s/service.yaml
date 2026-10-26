@@ -16,3 +16,4 @@ spec:
   loadBalancerSourceRanges:
     - 142.188.187.19/32           # you
     - 52.0.64.164/32  # pipeline smoke test
+    - 54.205.243.229/32
