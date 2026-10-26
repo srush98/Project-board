@@ -115,6 +115,27 @@ pipeline {
            post {
                always { sh 'docker logout || true' }
            }
-       }    
+       }
+       stage('KubeAudit (manifests)') {
+            steps {
+                sh '''
+                    mkdir -p rendered
+                    sed "s|IMAGE_PLACEHOLDER|${IMAGE_NAME}:${IMAGE_TAG}|" k8s/deployment.yaml > rendered/deployment.yaml
+                    cp k8s/service.yaml rendered/service.yaml
+        
+                    set +e
+                    kubeaudit all -k kubeaudit-config.yaml -f rendered/deployment.yaml > kubeaudit-manifest-report.txt 2>&1
+                    rc=$?
+                    set -e
+                    cat kubeaudit-manifest-report.txt
+                    exit $rc
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'kubeaudit-manifest-report.txt, rendered/*.yaml', allowEmptyArchive: true
+                }
+            }
+        } 
     }
 }
