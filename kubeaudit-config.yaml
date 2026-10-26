@@ -1,0 +1,6 @@
+# KubeAudit configuration. All auditors are enabled unless set to false here.
+enabledAuditors:
+  # EKS Amazon Linux 2023 nodes use SELinux, not AppArmor. Requesting an
+  # AppArmor profile would prevent pods from starting. Isolation is provided
+  # by seccomp RuntimeDefault, non-root, drop ALL capabilities, read-only rootfs.
+  apparmor: false
