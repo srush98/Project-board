@@ -2,90 +2,85 @@ package com.javaproject.security;
 
 import javax.sql.DataSource;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Lazy;
-import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.jdbc.JdbcDaoImpl;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.NoOpPasswordEncoder;
 import org.springframework.security.provisioning.JdbcUserDetailsManager;
+import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
 @EnableWebSecurity
-public class SecurityConfig extends WebSecurityConfigurerAdapter {
-
-    private LoggingAccessDeniedHandler accessDeniedHandler;
-
-    @Autowired
-    public void setAccessDeniedHandler(LoggingAccessDeniedHandler accessDeniedHandler) {
-        this.accessDeniedHandler = accessDeniedHandler;
-    }
+public class SecurityConfig {
 
     @Bean
     public BCryptPasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
-    @Autowired
-    @Lazy
-    private BCryptPasswordEncoder passwordEncoder;
-
-    @Autowired
-    private DataSource dataSource;
-
     /**
-     * Creates a bean of type JdbcUserDetailsManager that will be used in
-     * HomeController
-     * 
-     * @return an instance configured to use our datasource
-     * @throws Exception
+     * User store used for login and by HomeController for registration.
+     * Replaces the old configure(AuthenticationManagerBuilder) method.
      */
     @Bean
     @DependsOnDatabaseInitialization
-    public JdbcUserDetailsManager jdbcUserDetailsManager() throws Exception {
-        // provides crud operations for users
-        JdbcUserDetailsManager jdbcUserDetailsManager = new JdbcUserDetailsManager();
+    public JdbcUserDetailsManager jdbcUserDetailsManager(DataSource dataSource,
+            BCryptPasswordEncoder passwordEncoder) {
+        // 1. Create Spring Security's standard users/authorities tables
+        // (same script the old .withDefaultSchema() ran)
+        new ResourceDatabasePopulator(
+                new ClassPathResource(JdbcDaoImpl.DEFAULT_USER_SCHEMA_DDL_LOCATION))
+                .execute(dataSource);
 
-        // Link up with our datasource
-        jdbcUserDetailsManager.setDataSource(dataSource);
-        return jdbcUserDetailsManager;
+        JdbcUserDetailsManager manager = new JdbcUserDetailsManager(dataSource);
+
+        // 2. Demo users (same as the old .withUser(...) calls)
+        if (!manager.userExists("bugs")) {
+            manager.createUser(User.withUsername("bugs")
+                    .password(passwordEncoder.encode("bunny"))
+                    .roles("USER")
+                    .build());
+        }
+        if (!manager.userExists("daffy")) {
+            manager.createUser(User.withUsername("daffy")
+                    .password(passwordEncoder.encode("duck"))
+                    .roles("USER", "MANAGER")
+                    .build());
+        }
+        return manager;
     }
 
-    @Override
-    protected void configure(HttpSecurity http) throws Exception {
-        http.authorizeHttpRequests(requests -> requests
-                .requestMatchers("/user/**").hasAnyRole("USER", "MANAGER") // sets up authorization
-                .requestMatchers("/secured/**").hasAnyRole("USER", "MANAGER")
-                .requestMatchers("/manager/**").hasRole("MANAGER")
-                .requestMatchers("/h2-console/**").permitAll()
-                .requestMatchers("/", "/**").permitAll()) // allows us to chain
-                .formLogin(login -> login.loginPage("/login")
+    /**
+     * Web security rules. Replaces the old configure(HttpSecurity) method.
+     */
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http,
+            LoggingAccessDeniedHandler accessDeniedHandler) throws Exception {
+        http
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/user/**").hasAnyRole("USER", "MANAGER")
+                        .requestMatchers("/secured/**").hasAnyRole("USER", "MANAGER")
+                        .requestMatchers("/manager/**").hasRole("MANAGER")
+                        .requestMatchers("/", "/**").permitAll())
+                .formLogin(login -> login
+                        .loginPage("/login")
                         .defaultSuccessUrl("/secured"))
-                .logout(logout -> logout.invalidateHttpSession(true)
+                .logout(logout -> logout
+                        .invalidateHttpSession(true)
                         .clearAuthentication(true))
-                .exceptionHandling(handling -> handling
-                        .accessDeniedHandler(accessDeniedHandler));
+                .exceptionHandling(ex -> ex
+                        .accessDeniedHandler(accessDeniedHandler))
+                // FINDING: CSRF disabled (kept as-is; see KAN-5)
+                .csrf(csrf -> csrf.disable())
+                // FINDING: frame options disabled for H2 console (kept as-is; see KAN-5)
+                .headers(headers -> headers.frameOptions(frame -> frame.disable()));
 
-        http.csrf(csrf -> csrf.disable());
-        http.headers(headers -> headers.frameOptions(options -> options.disable()));
-    }
-
-    /*~~(Migrate manually based on https://spring.io/blog/2022/02/21/spring-security-without-the-websecurityconfigureradapter)~~>*/@Override
-    protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-
-        auth.jdbcAuthentication()
-                .dataSource(dataSource)
-                .withDefaultSchema()
-                .passwordEncoder(passwordEncoder)
-                .withUser("bugs")
-                .password(passwordEncoder.encode("bunny")).roles("USER")
-                .and()
-                .withUser("daffy")
-                .password(passwordEncoder.encode("duck")).roles("USER", "MANAGER");
+        return http.build();
     }
 }
