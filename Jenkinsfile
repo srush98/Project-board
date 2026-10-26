@@ -1,3 +1,24 @@
+def notifyBuild(String status, String color) {
+    emailext(
+        to: "${env.NOTIFY_TO}",
+        subject: "[${status}] ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+        mimeType: 'text/html',
+        attachLog: status == 'FAILURE',
+        compressLog: true,
+        attachmentsPattern: 'trivy-fs-report.txt,trivy-image-report.txt,kubeaudit-*.txt',
+        body: """
+            <h2 style="color:${color}">Pipeline ${status}</h2>
+            <table cellpadding="4">
+              <tr><td><b>Job</b></td><td>${env.JOB_NAME} #${env.BUILD_NUMBER}</td></tr>
+              <tr><td><b>Image</b></td><td>${env.IMAGE_NAME}:${env.IMAGE_TAG ?: 'n/a'}</td></tr>
+              <tr><td><b>App URL</b></td><td>${env.APP_URL ?: 'not deployed'}</td></tr>
+              <tr><td><b>Build</b></td><td><a href="${env.BUILD_URL}">${env.BUILD_URL}</a></td></tr>
+              <tr><td><b>Reports</b></td><td><a href="${env.BUILD_URL}artifact/">Build artifacts</a> (scan reports attached)</td></tr>
+            </table>
+        """
+    )
+}
+
 pipeline {
     agent any
 
@@ -9,10 +30,14 @@ pipeline {
     options {
         timestamps()
         buildDiscarder(logRotator(numToKeepStr: '10'))
+        disableConcurrentBuilds()
+        timeout(time: 30, unit: 'MINUTES')
     }
 
     environment {
         IMAGE_NAME = 'srush1798/boardgame'
+        NOTIFY_TO  = 'srushtijiyani2013@gmail.com'
+        DEPLOYED   = 'false'
     }
 
     stages {
@@ -204,6 +229,7 @@ pipeline {
                         --overwrite \
                         kubernetes.io/change-cause="Jenkins build ${BUILD_NUMBER}, image ${IMAGE_TAG}"
                 '''
+                script { env.DEPLOYED = 'true' }
             }
         }
 
@@ -259,14 +285,40 @@ pipeline {
 
                     cat kubeaudit-live-report.txt
                 '''
+                        script {
+                            env.APP_URL = 'http://' + sh(
+                                script: "kubectl get svc boardgame -n boardgame -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'",
+                                returnStdout: true).trim()
+                        }
             }
 
-            post {
+           post {
                 always {
-                    archiveArtifacts(
-                        artifacts: 'kubeaudit-live-report.txt',
-                        allowEmptyArchive: true
-                    )
+                    junit allowEmptyResults: true, testResults: 'target/surefire-reports/*.xml'
+                    archiveArtifacts artifacts: 'trivy-*.txt, kubeaudit-*.txt, rendered/*.yaml',
+                                     allowEmptyArchive: true
+                }
+                success {
+                    notifyBuild('SUCCESS', 'green')
+                }
+                unstable {
+                    notifyBuild('UNSTABLE', 'orange')
+                }
+                failure {
+                    script {
+                        if (env.DEPLOYED == 'true') {
+                            echo 'Deployment failed after apply: rolling back to previous version'
+                            sh 'kubectl rollout undo deployment/boardgame -n boardgame || true'
+                        }
+                    }
+                    notifyBuild('FAILURE', 'red')
+                }
+                cleanup {
+                    sh '''
+                        if [ -n "$IMAGE_TAG" ]; then docker rmi "$IMAGE_NAME:$IMAGE_TAG" || true; fi
+                        docker image prune -f || true
+                    '''
+                    cleanWs()
                 }
             }
         }
