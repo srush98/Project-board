@@ -3,7 +3,9 @@ package com.javaproject.security;
 import javax.sql.DataSource;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -13,6 +15,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.NoOpPasswordEncoder;
 import org.springframework.security.provisioning.JdbcUserDetailsManager;
 
+@Configuration
 @EnableWebSecurity
 public class SecurityConfig extends WebSecurityConfigurerAdapter {
 
@@ -43,6 +46,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
      * @throws Exception
      */
     @Bean
+    @DependsOnDatabaseInitialization
     public JdbcUserDetailsManager jdbcUserDetailsManager() throws Exception {
         // provides crud operations for users
         JdbcUserDetailsManager jdbcUserDetailsManager = new JdbcUserDetailsManager();
@@ -54,27 +58,24 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
 
     @Override
     protected void configure(HttpSecurity http) throws Exception {
-        http.authorizeRequests()
-                .antMatchers("/user/**").hasAnyRole("USER", "MANAGER") // sets up authorization
-                .antMatchers("/secured/**").hasAnyRole("USER", "MANAGER")
-                .antMatchers("/manager/**").hasRole("MANAGER")
-                .antMatchers("/h2-console/**").permitAll()
-                .antMatchers("/", "/**").permitAll() // allows access to index in templates
-                .and() // allows us to chain
-                .formLogin().loginPage("/login")
-                .defaultSuccessUrl("/secured")
-                .and()
-                .logout().invalidateHttpSession(true)
-                .clearAuthentication(true)
-                .and()
-                .exceptionHandling()
-                .accessDeniedHandler(accessDeniedHandler);
+        http.authorizeHttpRequests(requests -> requests
+                .requestMatchers("/user/**").hasAnyRole("USER", "MANAGER") // sets up authorization
+                .requestMatchers("/secured/**").hasAnyRole("USER", "MANAGER")
+                .requestMatchers("/manager/**").hasRole("MANAGER")
+                .requestMatchers("/h2-console/**").permitAll()
+                .requestMatchers("/", "/**").permitAll()) // allows us to chain
+                .formLogin(login -> login.loginPage("/login")
+                        .defaultSuccessUrl("/secured"))
+                .logout(logout -> logout.invalidateHttpSession(true)
+                        .clearAuthentication(true))
+                .exceptionHandling(handling -> handling
+                        .accessDeniedHandler(accessDeniedHandler));
 
-        http.csrf().disable();
-        http.headers().frameOptions().disable();
+        http.csrf(csrf -> csrf.disable());
+        http.headers(headers -> headers.frameOptions(options -> options.disable()));
     }
 
-    @Override
+    /*~~(Migrate manually based on https://spring.io/blog/2022/02/21/spring-security-without-the-websecurityconfigureradapter)~~>*/@Override
     protected void configure(AuthenticationManagerBuilder auth) throws Exception {
 
         auth.jdbcAuthentication()
