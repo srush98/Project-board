@@ -14,5 +14,5 @@ spec:
       targetPort: 8080
       protocol: TCP
   loadBalancerSourceRanges:
-    - <your-ip>/32           # you
-    - <jenkins-elastic-ip>/32  # pipeline smoke test
+    - 142.188.187.19/32           # you
+    - 52.0.64.164/32  # pipeline smoke test
