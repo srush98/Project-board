@@ -31,6 +31,8 @@ This web application displays lists of board games and their reviews. While anyo
   - Authentication by allowing the users to authenticate with a username and password
   - Passwords stored as BCrypt hashes
   - Authorization by granting different permissions based on the roles (non-members, users, and managers)
+  - CSRF protection on all state-changing requests (Thymeleaf `th:action` forms include the token automatically)
+  - Clickjacking protection through the `X-Frame-Options: DENY` header
 - Different roles (non-members, users, and managers) with varying levels of permissions
   - Non-members only can see the boardgame lists and reviews
   - Users can add board games and write reviews
@@ -60,6 +62,12 @@ Prerequisite: JDK 17 or later. Maven is not required; the project ships with the
 
 Run the tests with `./mvnw test`. A JaCoCo coverage report is written to `target/site/jacoco/`.
 
+> **Note:** CSRF protection is enabled, so `POST` requests sent outside the browser (for example
+> `curl` calls to the JSON API at `POST /boardgames`) are rejected with `403 Forbidden` unless
+> they include a valid CSRF token. In MockMvc tests, add `.with(csrf())` to `POST` requests.
+> The H2 console is no longer usable in the browser because of these protections; see KAN-5 in
+> [SECURITY.md](SECURITY.md).
+
 ### Run with Docker
 
 ```sh
@@ -83,3 +91,4 @@ security controls, accepted risks and known gaps.
 | Spring Boot 2.5.6, Java 11 | Original application |
 | Spring Boot 3.5 | `javax.*` to `jakarta.*` migration; `WebSecurityConfigurerAdapter` replaced with a `SecurityFilterChain` bean |
 | Spring Boot 4.0 → 4.1.2, Java 17 | Modular starters (`spring-boot-starter-webmvc`, test starters); resolves the CVEs tracked in KAN-2 |
+| Security hardening (KAN-5) | CSRF protection and `X-Frame-Options` re-enabled (Spring Security defaults) |

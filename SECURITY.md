@@ -16,6 +16,16 @@ review date.
 | Verify Deployment | Rollout status + smoke test through the load balancer (HTTP 200) | **Blocks**; automatic rollback if the deployment fails after apply |
 | KubeAudit (live) | Audit of the running namespace | Report only (see KAN-3) |
 
+## Application security controls
+
+- Form-based login backed by `JdbcUserDetailsManager`; passwords stored as BCrypt hashes.
+- Role-based URL rules: `/secured/**` and `/user/**` require `USER` or `MANAGER`;
+  `/manager/**` requires `MANAGER`. Everything else is public (see the authorization gap below).
+- CSRF protection is enabled (Spring Security default). Every Thymeleaf form uses `th:action`,
+  so the token is included automatically. Logout is a `POST` form.
+- `X-Frame-Options: DENY` and Spring Security's other default security headers are sent.
+- Tests send CSRF tokens with `SecurityMockMvcRequestPostProcessors.csrf()`.
+
 ## Supply-chain controls
 
 - Security tools are installed at pinned versions and verified with SHA-256 checksums
@@ -99,26 +109,68 @@ unless this setting is enabled.
 
 **Target Date:** 2026-11-24
 
-### KAN-5: CSRF protection and frame options disabled
+### KAN-5: CSRF protection, frame options and H2 console (partially remediated)
 
-**Finding:** `SecurityConfig` disables CSRF protection and the `X-Frame-Options` header. The
-H2 web console is enabled (`spring.h2.console.enabled=true`, `web-allow-others=true`) and
-reachable without login through the `/**` `permitAll` rule. These settings were carried over
-unchanged from the original application during the KAN-2 upgrade.
+**Original finding:** `SecurityConfig` disabled CSRF protection and the `X-Frame-Options`
+header. The H2 web console is enabled (`spring.h2.console.enabled=true`,
+`web-allow-others=true`) and reachable without login through the `/**` `permitAll` rule.
+These settings were carried over unchanged from the original application during the KAN-2
+upgrade.
 
-**Risk:** Authenticated users can be tricked into submitting state-changing requests
-(cross-site request forgery). Pages can be framed by other sites (clickjacking). Anyone who
-can reach the application can open the H2 console and read or change the database.
+**Remediated (2026-10-26, PR #3):**
+
+* Removed `.csrf(csrf -> csrf.disable())` and the `frameOptions` override, so Spring
+  Security's defaults apply: CSRF tokens are required and `X-Frame-Options: DENY` is sent.
+* Updated `TestController` to send CSRF tokens on `POST` requests.
+
+**Still open:** The H2 console is still enabled and reachable at `/h2-console` without login.
+With CSRF and `DENY` frame options in place, its browser UI no longer works, but the console
+should not be exposed outside local development.
+
+**Risk:** Low while the console is unusable, but a later change that relaxes CSRF or frame
+options for the console would expose read and write access to the database.
 
 **Current Mitigations:**
 
+* CSRF protection and `X-Frame-Options: DENY` block the console's login form and frames.
 * Load balancer restricted to allow-listed IPs using `loadBalancerSourceRanges`.
 * Demo data only, stored in an in-memory H2 database that is reset on every restart.
-* Environment is torn down after evaluation.
 
-**Remediation:** Remove `.csrf(csrf -> csrf.disable())`; Thymeleaf forms that use `th:action`
-include the CSRF token automatically. Change frame options to `sameOrigin()`. Disable the H2
-console outside local development, for example in a `dev` profile only.
+**Remediation:** Set `spring.h2.console.enabled=false` and remove `web-allow-others` from
+`application.properties`; enable the console only in a local `dev` profile. Add a regression
+test that sends a `POST` without a token and expects `403 Forbidden`.
+
+**Owner:** Srushti
+
+**Target Date:** TBD
+
+### Authorization gaps on state-changing endpoints (ticket to be filed)
+
+**Finding:** Several endpoints that change data fall under the `/**` `permitAll` rule because
+they are not under `/secured/**` or `/manager/**`:
+
+| Endpoint | Method | Effect |
+|---|---|---|
+| `/deleteReview/{id}` | GET | Deletes a review; intended for managers only |
+| `/reviewAdded` | POST | Adds or edits a review |
+| `/boardgameAdded` | POST | Adds a board game |
+| `/boardgames` | POST | Adds a board game (JSON API) |
+
+In addition, `/addUser` lets anyone register with any role, including `MANAGER`.
+
+**Risk:** Unauthenticated visitors can add board games and add, edit or delete reviews.
+`/deleteReview/{id}` is a `GET` request, so CSRF protection does not cover it: a link or
+image tag on another site can delete reviews.
+
+**Current Mitigations:**
+
+* CSRF tokens are required on the `POST` endpoints, which blocks cross-site form submissions.
+* Load balancer restricted to allow-listed IPs; demo data only, reset on every restart.
+
+**Remediation:** Change `/deleteReview/{id}` to `POST` (or `DELETE`) and restrict it to
+`MANAGER`. Require `USER` or `MANAGER` for `/reviewAdded`, `/boardgameAdded` and
+`POST /boardgames`. Restrict self-registration to the `USER` role. Add tests that expect
+anonymous requests to these endpoints to be redirected to the login page.
 
 **Owner:** Srushti
 
