@@ -136,6 +136,59 @@ pipeline {
                     archiveArtifacts artifacts: 'kubeaudit-manifest-report.txt, rendered/*.yaml', allowEmptyArchive: true
                 }
             }
-        } 
+        }
+        stage('Deploy to EKS') {
+            steps {
+                sh '''
+                    aws eks update-kubeconfig --name devsecops-eks --region us-east-1
+                    kubectl apply -f rendered/
+                    kubectl annotate deployment/boardgame -n boardgame --overwrite \
+                      kubernetes.io/change-cause="Jenkins build ${BUILD_NUMBER}, image ${IMAGE_TAG}"
+                '''
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                sh '''
+                    kubectl rollout status deployment/boardgame -n boardgame --timeout=300s
+                    kubectl get pods,svc -n boardgame -o wide
+        
+                    echo "Waiting for load balancer hostname..."
+                    LB=""
+                    for i in $(seq 1 30); do
+                        LB=$(kubectl get svc boardgame -n boardgame \
+                              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+                        [ -n "$LB" ] && break
+                        sleep 10
+                    done
+                    [ -n "$LB" ] || { echo "No load balancer hostname"; exit 1; }
+                    echo "App URL: http://$LB"
+        
+                    for i in $(seq 1 30); do
+                        code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://$LB/" || true)
+                        echo "Smoke test attempt $i: HTTP $code"
+                        [ "$code" = "200" ] && exit 0
+                        sleep 10
+                    done
+                    echo "Smoke test failed"
+                    exit 1
+                '''
+            }
+        }
+
+        stage('KubeAudit (live)') {
+            steps {
+                sh '''
+                    kubeaudit all -n boardgame -k kubeaudit-config.yaml > kubeaudit-live-report.txt 2>&1 || true
+                    cat kubeaudit-live-report.txt
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'kubeaudit-live-report.txt', allowEmptyArchive: true
+                }
+            }
+        }
     }
 }
