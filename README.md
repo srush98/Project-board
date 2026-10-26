@@ -7,8 +7,8 @@ This web application displays lists of board games and their reviews. While anyo
 
 ## Technologies
 
-- Java
-- Spring Boot
+- Java 17
+- Spring Boot 4.1
 - Amazon Web Services(AWS) EC2
 - Thymeleaf
 - Thymeleaf Fragments
@@ -18,8 +18,8 @@ This web application displays lists of board games and their reviews. While anyo
 - Spring MVC
 - JDBC
 - H2 Database Engine (In-memory)
-- JUnit test framework
-- Spring Security
+- JUnit 5 test framework
+- Spring Security 7
 - Twitter Bootstrap
 - Maven
 
@@ -29,6 +29,7 @@ This web application displays lists of board games and their reviews. While anyo
 - UI components created with Thymeleaf and styled with Twitter Bootstrap
 - Authentication and authorization using Spring Security
   - Authentication by allowing the users to authenticate with a username and password
+  - Passwords stored as BCrypt hashes
   - Authorization by granting different permissions based on the roles (non-members, users, and managers)
 - Different roles (non-members, users, and managers) with varying levels of permissions
   - Non-members only can see the boardgame lists and reviews
@@ -44,10 +45,41 @@ This web application displays lists of board games and their reviews. While anyo
 
 ## How to Run
 
+Prerequisite: JDK 17 or later. Maven is not required; the project ships with the Maven wrapper.
+
 1. Clone the repository
-2. Open the project in your IDE of choice
-3. Run the application
+2. Start the application, either from your IDE or from the command line:
+   ```sh
+   ./mvnw spring-boot:run        # Windows: mvnw.cmd spring-boot:run
+   ```
+3. Open http://localhost:8080
 4. To use initial user data, use the following credentials.
   - username: bugs    |     password: bunny (user role)
   - username: daffy   |     password: duck  (manager role)
 5. You can also sign-up as a new user and customize your role to play with the application! 😊
+
+Run the tests with `./mvnw test`. A JaCoCo coverage report is written to `target/site/jacoco/`.
+
+### Run with Docker
+
+```sh
+./mvnw package -DskipTests
+docker build -t boardgame .
+docker run -p 8080:8080 boardgame
+```
+
+The image runs on `eclipse-temurin:17-jre-noble` as a non-root user (UID 10001).
+
+## CI/CD and security
+
+The `Jenkinsfile` builds, tests and scans the application (SonarQube, Trivy, KubeAudit) before
+deploying it to Amazon EKS using the manifests in `k8s/`. See [SECURITY.md](SECURITY.md) for the
+security controls, accepted risks and known gaps.
+
+## Upgrade history
+
+| Version | Notes |
+|---|---|
+| Spring Boot 2.5.6, Java 11 | Original application |
+| Spring Boot 3.5 | `javax.*` to `jakarta.*` migration; `WebSecurityConfigurerAdapter` replaced with a `SecurityFilterChain` bean |
+| Spring Boot 4.0 → 4.1.2, Java 17 | Modular starters (`spring-boot-starter-webmvc`, test starters); resolves the CVEs tracked in KAN-2 |

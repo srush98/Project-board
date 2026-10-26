@@ -10,8 +10,8 @@ review date.
 | Stage | Control | Enforcement |
 |---|---|---|
 | SonarQube Analysis + Quality Gate | Static analysis: bugs, code smells, security hotspots, coverage on new code | **Blocks** the pipeline if the Quality Gate fails |
-| Trivy FS Scan | Dependency CVEs and committed secrets in the source tree | Report always; CRITICAL fixable findings mark the build **UNSTABLE** (see KAN-2) |
-| Trivy Image Scan | OS-package CVEs in the container image | **Blocks** on CRITICAL fixable OS vulnerabilities |
+| Trivy FS Scan | Dependency CVEs and committed secrets in the source tree | Report always; **blocks** on CRITICAL fixable findings |
+| Trivy Image Scan | OS-package and Java-library CVEs in the container image | Report always; **blocks** on CRITICAL fixable findings |
 | KubeAudit (manifests) | Kubernetes security controls on the rendered manifest, before deployment | **Blocks** deployment on any error-level finding |
 | Verify Deployment | Rollout status + smoke test through the load balancer (HTTP 200) | **Blocks**; automatic rollback if the deployment fails after apply |
 | KubeAudit (live) | Audit of the running namespace | Report only (see KAN-3) |
@@ -49,29 +49,26 @@ review date.
 
 ## Accepted risks
 
-### KAN-2: Risk Acceptance
+There are no open risk acceptances.
 
-**Risk:** 26 CRITICAL fixable CVEs inherited from Spring Boot 2.5.6. See `trivy-fs-report.txt`.
+### KAN-2: Spring Boot 2.5.6 CVEs (remediated)
 
-**Decision:** Temporarily set the Trivy file-system gate to `UNSTABLE` instead of `FAIL`
-to complete the pipeline evaluation. The finding stays visible on every build and in
-every notification email.
+**Original risk:** 26 CRITICAL fixable CVEs inherited from Spring Boot 2.5.6. The Trivy
+file-system gate was temporarily set to `UNSTABLE`, and the image gate was limited to OS
+packages, so the pipeline could be evaluated.
 
-**Compensating Controls:**
+**Remediation (2026-10-26):**
 
-* Application runs in private subnets with no public IP.
-* External access only through the load balancer, which is restricted to allow-listed IPs
-  via `loadBalancerSourceRanges`.
-* Containers run as non-root with all capabilities dropped and a read-only root filesystem.
-* Demo data only, stored in an in-memory H2 database.
-* Environment is torn down after evaluation.
+* Upgraded Spring Boot 2.5.6 → 3.5 → 4.1.2 and Java 11 → 17, using OpenRewrite for the
+  `javax.*` to `jakarta.*` migration and the Boot 4.0 starter changes.
+* Migrated Spring Security from `WebSecurityConfigurerAdapter` to a `SecurityFilterChain`
+  bean; demo users are now created through `JdbcUserDetailsManager` with BCrypt-hashed passwords.
+* Restored both hard Trivy gates: the `catchError` wrapper was removed from the file-system
+  scan, and the image scan now gates on Java libraries as well as OS packages.
 
-**Remediation:** Upgrade to Spring Boot 3.x (`javax.*` to `jakarta.*` migration), rerun the
-Trivy scan, and restore the hard gate by removing the `catchError` wrapper in the Jenkinsfile.
+**Closure:** Close the ticket once a pipeline run on the upgraded build passes both Trivy gates.
 
 **Owner:** Srushti
-
-**Expiry Date:** 2026-11-24
 
 ---
 
@@ -101,6 +98,31 @@ unless this setting is enabled.
 **Owner:** Srushti
 
 **Target Date:** 2026-11-24
+
+### KAN-5: CSRF protection and frame options disabled
+
+**Finding:** `SecurityConfig` disables CSRF protection and the `X-Frame-Options` header. The
+H2 web console is enabled (`spring.h2.console.enabled=true`, `web-allow-others=true`) and
+reachable without login through the `/**` `permitAll` rule. These settings were carried over
+unchanged from the original application during the KAN-2 upgrade.
+
+**Risk:** Authenticated users can be tricked into submitting state-changing requests
+(cross-site request forgery). Pages can be framed by other sites (clickjacking). Anyone who
+can reach the application can open the H2 console and read or change the database.
+
+**Current Mitigations:**
+
+* Load balancer restricted to allow-listed IPs using `loadBalancerSourceRanges`.
+* Demo data only, stored in an in-memory H2 database that is reset on every restart.
+* Environment is torn down after evaluation.
+
+**Remediation:** Remove `.csrf(csrf -> csrf.disable())`; Thymeleaf forms that use `th:action`
+include the CSRF token automatically. Change frame options to `sameOrigin()`. Disable the H2
+console outside local development, for example in a `dev` profile only.
+
+**Owner:** Srushti
+
+**Target Date:** TBD
 
 ---
 

@@ -75,11 +75,9 @@ public class SecurityConfig {
                         .invalidateHttpSession(true)
                         .clearAuthentication(true))
                 .exceptionHandling(ex -> ex
-                        .accessDeniedHandler(accessDeniedHandler))
-                // FINDING: CSRF disabled (kept as-is; see KAN-5)
-                .csrf(csrf -> csrf.disable())
-                // FINDING: frame options disabled for H2 console (kept as-is; see KAN-5)
-                .headers(headers -> headers.frameOptions(frame -> frame.disable()));
+                        .accessDeniedHandler(accessDeniedHandler));
+                // CSRF protection and frame options (clickjacking protection) use
+                // Spring Security's secure defaults. Re-enabled under KAN-5.
 
         return http.build();
     }

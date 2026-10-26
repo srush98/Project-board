@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 
 import java.util.List;
 
@@ -56,7 +57,8 @@ class TestController {
         requestParams.add("gameType", "Party Game");
 
         int origSize = da.getBoardGames().size();
-        mockMvc.perform(post("/boardgameAdded").params(requestParams))
+        mockMvc.perform(post("/boardgameAdded").with(csrf())
+                .params(requestParams))
                 .andExpect(status().isFound())
                 .andExpect(redirectedUrl("/"))
                 .andDo(print());
@@ -75,7 +77,8 @@ class TestController {
 
         review.setText("Edited text");
 
-        mockMvc.perform(post("/reviewAdded").flashAttr("review", review))
+        mockMvc.perform(post("/reviewAdded").with(csrf())
+                .flashAttr("review", review))
                 .andExpect(status().isFound())
                 .andExpect(redirectedUrl("/" + review.getGameId() + "/reviews"));
 
