@@ -120,8 +120,3 @@ These are deliberate trade-offs for cost and simplicity. Each lists the producti
 | Demo login credentials published in the upstream README | Sample application data | Remove from docs; real authentication backed by a secrets manager |
 | No envelope encryption of Kubernetes Secrets with a customer-managed KMS key | KMS key cost | Enable EKS secrets encryption with a customer-managed key |
 | Private Docker Hub repository with an image pull secret | Required registry choice | Amazon ECR with IAM-based pulls (no secret needed) |
-
-## Reporting a vulnerability
-
-This is a course project. Please report security issues by opening a GitHub issue
-**without** exploit details, or by contacting the repository owner directly.
