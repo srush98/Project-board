@@ -87,6 +87,13 @@ class TestController {
     }
 
     @Test
+    public void testPostWithoutCsrfTokenIsRejected() throws Exception {
+        mockMvc.perform(post("/boardgameAdded"))
+                .andExpect(status().isFound())
+                .andExpect(redirectedUrl("/permission-denied"));
+    }
+
+    @Test
     public void testDeleteReview() throws Exception {
         List<BoardGame> boardGames = da.getBoardGames();
         Long boardgameId = boardGames.get(0).getId();
