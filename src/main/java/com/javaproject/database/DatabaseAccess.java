@@ -2,7 +2,7 @@ package com.javaproject.database;
 
 import java.util.List;
 
-import javax.sql.DataSource;
+// import javax.sql.DataSource;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.BeanPropertyRowMapper;
@@ -10,14 +10,14 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
-import org.springframework.security.core.userdetails.User;
+// import org.springframework.security.core.userdetails.User;
 import org.springframework.stereotype.Repository;
 
 import com.javaproject.beans.BoardGame;
 import com.javaproject.beans.Review;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
+// import lombok.AllArgsConstructor;
+// import lombok.Data;
 
 @Repository
 // @AllArgsConstructor
