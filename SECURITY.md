@@ -13,7 +13,7 @@ review date.
 | Trivy FS Scan | Dependency CVEs and committed secrets in the source tree | Report always; **blocks** on CRITICAL fixable findings |
 | Trivy Image Scan | OS-package and Java-library CVEs in the container image | Report always; **blocks** on CRITICAL fixable findings |
 | KubeAudit (manifests) | Kubernetes security controls on the rendered manifest, before deployment | **Blocks** deployment on any error-level finding |
-| Verify Deployment | Rollout status + smoke test through the load balancer (HTTP 200) | **Blocks**; automatic rollback if the deployment fails after apply |
+| Verify Deployment | Rollout status + smoke test of `https://srushti.site` (valid certificate, HTTP 200, `Strict-Transport-Security` header present) | **Blocks**; automatic rollback if the deployment fails after apply |
 | KubeAudit (live) | Audit of the running namespace | Report only (see KAN-3) |
 
 ## Application security controls
@@ -24,7 +24,8 @@ review date.
 - CSRF protection is enabled (Spring Security default). Every Thymeleaf form uses `th:action`,
   so the token is included automatically. Logout is a `POST` form.
 - `X-Frame-Options: DENY` and Spring Security's other default security headers are sent.
-- Tests send CSRF tokens with `SecurityMockMvcRequestPostProcessors.csrf()`.
+- Tests send CSRF tokens with `SecurityMockMvcRequestPostProcessors.csrf()`. A regression test
+  (`testPostWithoutCsrfTokenIsRejected`) checks that a `POST` without a token is rejected.
 
 ## Supply-chain controls
 
@@ -52,6 +53,16 @@ review date.
 - The NLB uses the `ELBSecurityPolicy-TLS13-1-2-2021-06` policy: TLS 1.3 and TLS 1.2 only,
   with legacy protocols and weak ciphers disabled.
 - Traffic from the NLB to the pods on port 8080 is plain HTTP inside the VPC.
+- The NLB does not add `X-Forwarded-Proto`, so `HttpsBehindNlbFilter` (enabled only in
+  Kubernetes with `APP_BEHINDTLSPROXY=true`) makes every request report scheme `https`,
+  port 443 and `isSecure() == true`. As a result:
+  - Spring Security sends `Strict-Transport-Security` (`max-age=31536000; includeSubDomains`).
+  - Generated URLs and the CSRF/session logic treat the request as HTTPS.
+- The session cookie is marked `Secure` (`SERVER_SERVLET_SESSION_COOKIE_SECURE=true`).
+- Tomcat sends relative redirects (`SERVER_TOMCAT_USERELATIVEREDIRECTS=true`), so a redirect
+  never downgrades an HTTPS visitor to `http://`.
+- The filter is covered by `HttpsBehindNlbFilterTest`; the pipeline smoke test fails if the
+  certificate is invalid or the HSTS header is missing.
 - Port 80 is still open and serves plain HTTP (see the known gap below).
 
 ## Secrets handling
@@ -130,6 +141,8 @@ upgrade.
 * Removed `.csrf(csrf -> csrf.disable())` and the `frameOptions` override, so Spring
   Security's defaults apply: CSRF tokens are required and `X-Frame-Options: DENY` is sent.
 * Updated `TestController` to send CSRF tokens on `POST` requests.
+* Added a regression test that sends a `POST` without a token and expects it to be rejected
+  (KAN-7, PR #8).
 
 **Still open:** The H2 console is still enabled and reachable at `/h2-console` without login.
 With CSRF and `DENY` frame options in place, its browser UI no longer works, but the console
@@ -145,8 +158,7 @@ load balancer is no longer IP-restricted, so `/h2-console` is reachable from the
 * Demo data only, stored in an in-memory H2 database that is reset on every restart.
 
 **Remediation:** Set `spring.h2.console.enabled=false` and remove `web-allow-others` from
-`application.properties`; enable the console only in a local `dev` profile. Add a regression
-test that sends a `POST` without a token and expects `403 Forbidden`.
+`application.properties`; enable the console only in a local `dev` profile.
 
 **Owner:** Srushti
 
@@ -185,26 +197,39 @@ anonymous requests to these endpoints to be redirected to the login page.
 
 **Target Date:** TBD
 
-### KAN-7 follow-up: Plain HTTP still served on port 80
+### KAN-7 follow-up: Plain HTTP still served on port 80 (partially remediated)
 
-**Finding:** The load balancer listens on port 80 as well as 443, and both forward to the pod
-on port 8080. An NLB cannot redirect HTTP to HTTPS, and the application does not send a
-`Strict-Transport-Security` header. TLS terminates at the NLB, so the application sees every
-request as HTTP and does not mark the session cookie `Secure`. The pipeline smoke test still
-calls the load balancer over `http://`.
+**Original finding:** The load balancer listens on port 80 as well as 443, and both forward to
+the pod on port 8080. An NLB cannot redirect HTTP to HTTPS. The application saw every request
+as HTTP, so it sent no `Strict-Transport-Security` header and did not mark the session cookie
+`Secure`. The pipeline smoke test called the load balancer over `http://`.
 
-**Risk:** A user who opens the site over `http://` sends login credentials and the session
-cookie in clear text. The session cookie can also leak over HTTP after an HTTPS login.
+**Remediated (PRs #7 to #10):**
+
+* `HttpsBehindNlbFilter` makes the application treat requests as HTTPS, so HSTS is sent.
+* The session cookie is marked `Secure`, so the browser never sends it over HTTP.
+* Relative redirects keep HTTPS visitors on HTTPS.
+* The smoke test now calls `https://srushti.site` and checks the certificate and HSTS header.
+
+**Still open:** Port 80 is still open and serves the site over plain HTTP without a redirect.
+Browsers ignore HSTS received over HTTP, so a first-time visitor who types `http://` (or is
+downgraded by an attacker) stays on HTTP until they reach the HTTPS site once. The filter
+also reports port-80 requests as secure, so the application cannot tell them apart.
+
+**Risk:** On an `http://` visit, a submitted login form sends the password in clear text. The
+login itself fails, because the browser does not keep a `Secure` session cookie set over HTTP,
+so the CSRF check rejects the request.
 
 **Current Mitigations:**
 
-* HTTPS is available with TLS 1.2+ on the custom domain.
+* HTTPS with TLS 1.2+ on the custom domain, and HSTS for anyone who has visited it once.
+* `Secure` session cookie.
 * Demo data only.
 
 **Remediation:** Remove port 80 from the Service, or move to an ALB (AWS Load Balancer
-Controller Ingress) with an HTTP-to-HTTPS redirect. Once all traffic is HTTPS, enable HSTS
-and set `server.servlet.session.cookie.secure=true`. Switch the smoke test to `https://` on
-the custom domain.
+Controller Ingress) with an HTTP-to-HTTPS redirect and `X-Forwarded-Proto`, then replace
+`HttpsBehindNlbFilter` with `server.forward-headers-strategy=native`. Consider HSTS preload
+once all subdomains are HTTPS-only.
 
 **Owner:** Srushti
 

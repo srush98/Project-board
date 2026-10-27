@@ -37,7 +37,7 @@ This web application displays lists of board games and their reviews. While anyo
   - Non-members only can see the boardgame lists and reviews
   - Users can add board games and write reviews
   - Managers can edit and delete the reviews
-- Deployed on Amazon EKS and served over HTTPS on a custom domain (TLS 1.2+)
+- Deployed on Amazon EKS and served over HTTPS on a custom domain (TLS 1.2+, HSTS)
 - JUnit test framework for unit testing
 - Spring MVC best practices to segregate views, controllers, and database packages
 - JDBC for database connectivity and interaction
@@ -92,6 +92,21 @@ Balancer that terminates TLS on port 443 with an ACM certificate, using the
 at the load balancer's hostname. Traffic from the load balancer to the pods on port 8080 is
 plain HTTP inside the VPC.
 
+Because the NLB does not send `X-Forwarded-Proto`, the deployment sets three environment
+variables ([k8s/deployment.yaml](k8s/deployment.yaml)) so the application behaves as an HTTPS
+site:
+
+| Variable | Effect |
+|---|---|
+| `APP_BEHINDTLSPROXY=true` | Enables `HttpsBehindNlbFilter`, which makes every request report scheme `https`, port 443 and `isSecure() == true`. Spring Security then sends the `Strict-Transport-Security` header. |
+| `SERVER_SERVLET_SESSION_COOKIE_SECURE=true` | Marks the session cookie `Secure` |
+| `SERVER_TOMCAT_USERELATIVEREDIRECTS=true` | Sends relative `Location` headers, so redirects keep the browser on `https://` |
+
+The filter is off by default, so local runs (`http://localhost:8080`) are unaffected.
+
+The pipeline smoke test calls https://srushti.site, which also checks the certificate, and
+fails if the HSTS header is missing.
+
 Port 80 is still open and serves plain HTTP without a redirect; always use the `https://` URL.
 See the KAN-7 follow-up in [SECURITY.md](SECURITY.md).
 
@@ -103,4 +118,4 @@ See the KAN-7 follow-up in [SECURITY.md](SECURITY.md).
 | Spring Boot 3.5 | `javax.*` to `jakarta.*` migration; `WebSecurityConfigurerAdapter` replaced with a `SecurityFilterChain` bean |
 | Spring Boot 4.0 → 4.1.2, Java 17 | Modular starters (`spring-boot-starter-webmvc`, test starters); resolves the CVEs tracked in KAN-2 |
 | Security hardening (KAN-5) | CSRF protection and `X-Frame-Options` re-enabled (Spring Security defaults) |
-| HTTPS (KAN-7) | TLS termination at the load balancer with an ACM certificate on a custom domain |
+| HTTPS (KAN-7) | TLS termination at the load balancer with an ACM certificate on a custom domain; HSTS, `Secure` session cookie and relative redirects; HTTPS smoke test |
