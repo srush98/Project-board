@@ -32,6 +32,10 @@ spec:
           env:
             - name: JAVA_TOOL_OPTIONS
               value: "-XX:MaxRAMPercentage=75"
+            - name: APP_BEHINDTLSPROXY
+              value: "true"
+            - name: SERVER_SERVLET_SESSION_COOKIE_SECURE
+              value: "true"
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false
