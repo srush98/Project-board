@@ -36,6 +36,8 @@ spec:
               value: "true"
             - name: SERVER_SERVLET_SESSION_COOKIE_SECURE
               value: "true"
+            - name: SERVER_TOMCAT_USERELATIVEREDIRECTS
+              value: "true"
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false
