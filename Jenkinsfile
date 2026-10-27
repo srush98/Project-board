@@ -48,6 +48,7 @@ pipeline {
         IMAGE_NAME = 'srush1798/boardgame'
         NOTIFY_TO  = 'srushtijiyani2013@gmail.com'
         JIRA_SITE  = 'srushtisworkspace-40179857.atlassian.net'
+        PUBLIC_URL = 'https://srushti.site'
     }
 
     stages {
@@ -206,28 +207,30 @@ pipeline {
                         sleep 10
                     done
                     [ -n "$LB" ] || { echo "No load balancer hostname"; exit 1; }
-                    echo "App URL: http://$LB"
+                    echo "App URL: ${PUBLIC_URL}"
 
                     for i in $(seq 1 30); do
-                        code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://$LB/" || true)
-                        echo "Smoke test attempt $i: HTTP $code"
-                        [ "$code" = "200" ] && exit 0
+                        code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${PUBLIC_URL}/" || true)
+                        echo "Smoke test attempt $i: HTTPS $code"
+                        if [ "$code" = "200" ]; then
+                            curl -sI "${PUBLIC_URL}/" | grep -qi "^strict-transport-security" \
+                              || { echo "HSTS header missing"; exit 1; }
+                            echo "HTTPS, certificate and HSTS verified"
+                            exit 0
+                        fi
                         sleep 10
                     done
                     echo "Smoke test failed"
                     exit 1
                 '''
                 script {
-                    env.APP_URL = 'http://' + sh(
-                        script: "kubectl get svc boardgame -n boardgame -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'",
-                        returnStdout: true).trim()
+                    env.APP_URL = env.PUBLIC_URL
                     env.DEPLOY_VERIFIED = 'true'   // only reached if rollout + smoke test passed
                 }
             }
             post {
                 always {
                     // Deployment state comes from verification, not from the overall
-                    // build result (which is UNSTABLE because of KAN-2)
                     jiraSendDeploymentInfo site: "${env.JIRA_SITE}",
                                            environmentId: 'eks-boardgame-prod',
                                            environmentName: 'production',
