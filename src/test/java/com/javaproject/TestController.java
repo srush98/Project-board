@@ -63,7 +63,7 @@ class TestController {
                 .andExpect(redirectedUrl("/"))
                 .andDo(print());
         int newSize = da.getBoardGames().size();
-        assertEquals(newSize, origSize + 1);
+        assertEquals(origSize + 1, newSize);
     }
 
     @Test
@@ -83,7 +83,14 @@ class TestController {
                 .andExpect(redirectedUrl("/" + review.getGameId() + "/reviews"));
 
         review = da.getReview(reviewId);
-        assertEquals(review.getText(), "Edited text");
+        assertEquals("Edited text", review.getText());
+    }
+
+    @Test
+    public void testPostWithoutCsrfTokenIsRejected() throws Exception {
+        mockMvc.perform(post("/boardgameAdded"))
+                .andExpect(status().isFound())
+                .andExpect(redirectedUrl("/permission-denied"));
     }
 
     @Test
@@ -102,6 +109,6 @@ class TestController {
 
         int newSize = da.getReviews(boardgameId).size();
 
-        assertEquals(newSize, origSize - 1);
+        assertEquals(origSize - 1, newSize);
     }
 }
