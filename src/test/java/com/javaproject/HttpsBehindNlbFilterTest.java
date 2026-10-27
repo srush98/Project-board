@@ -2,6 +2,7 @@ package com.javaproject;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -9,7 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
-import com.javaproject.security.HttpsBehindNlbFilter; 
+import com.javaproject.security.HttpsBehindNlbFilter;
 
 class HttpsBehindNlbFilterTest {
 
@@ -26,6 +27,7 @@ class HttpsBehindNlbFilterTest {
 
         // What Spring Security sees after the filter
         HttpServletRequest seen = (HttpServletRequest) chain.getRequest();
+        assertNotNull(seen, "filter must pass the request down the chain");
         assertEquals("https", seen.getScheme());
         assertTrue(seen.isSecure());
         assertEquals(443, seen.getServerPort());
