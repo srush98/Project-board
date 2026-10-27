@@ -45,6 +45,15 @@ review date.
 - Jenkins has namespace-scoped access only (`AmazonEKSEditPolicy` on `boardgame`) via its
   IAM role. No static AWS keys or kubeconfig files are stored.
 
+## Transport security (KAN-7)
+
+- The application is served over HTTPS on a custom domain. TLS terminates at the AWS Network
+  Load Balancer using an ACM certificate (`aws-load-balancer-ssl-cert`) on port 443.
+- The NLB uses the `ELBSecurityPolicy-TLS13-1-2-2021-06` policy: TLS 1.3 and TLS 1.2 only,
+  with legacy protocols and weak ciphers disabled.
+- Traffic from the NLB to the pods on port 8080 is plain HTTP inside the VPC.
+- Port 80 is still open and serves plain HTTP (see the known gap below).
+
 ## Secrets handling
 
 - All secrets (SonarQube token, Nexus, Docker Hub, Jira, Gmail) are stored in the Jenkins
@@ -96,7 +105,6 @@ risk if a pod is compromised.
 
 * Single-application cluster.
 * Nodes in private subnets.
-* Load balancer restricted using `loadBalancerSourceRanges`.
 * Pods run as non-root with dropped capabilities and a read-only root filesystem.
 * Service-account token mounting disabled.
 
@@ -128,12 +136,12 @@ With CSRF and `DENY` frame options in place, its browser UI no longer works, but
 should not be exposed outside local development.
 
 **Risk:** Low while the console is unusable, but a later change that relaxes CSRF or frame
-options for the console would expose read and write access to the database.
+options for the console would expose read and write access to the database. Since KAN-7 the
+load balancer is no longer IP-restricted, so `/h2-console` is reachable from the internet.
 
 **Current Mitigations:**
 
 * CSRF protection and `X-Frame-Options: DENY` block the console's login form and frames.
-* Load balancer restricted to allow-listed IPs using `loadBalancerSourceRanges`.
 * Demo data only, stored in an in-memory H2 database that is reset on every restart.
 
 **Remediation:** Set `spring.h2.console.enabled=false` and remove `web-allow-others` from
@@ -160,17 +168,43 @@ In addition, `/addUser` lets anyone register with any role, including `MANAGER`.
 
 **Risk:** Unauthenticated visitors can add board games and add, edit or delete reviews.
 `/deleteReview/{id}` is a `GET` request, so CSRF protection does not cover it: a link or
-image tag on another site can delete reviews.
+image tag on another site can delete reviews. Since KAN-7 removed the load balancer IP
+allow-list (`loadBalancerSourceRanges`), any internet user can reach these endpoints.
 
 **Current Mitigations:**
 
 * CSRF tokens are required on the `POST` endpoints, which blocks cross-site form submissions.
-* Load balancer restricted to allow-listed IPs; demo data only, reset on every restart.
+* Demo data only, reset on every restart.
 
 **Remediation:** Change `/deleteReview/{id}` to `POST` (or `DELETE`) and restrict it to
 `MANAGER`. Require `USER` or `MANAGER` for `/reviewAdded`, `/boardgameAdded` and
 `POST /boardgames`. Restrict self-registration to the `USER` role. Add tests that expect
 anonymous requests to these endpoints to be redirected to the login page.
+
+**Owner:** Srushti
+
+**Target Date:** TBD
+
+### KAN-7 follow-up: Plain HTTP still served on port 80
+
+**Finding:** The load balancer listens on port 80 as well as 443, and both forward to the pod
+on port 8080. An NLB cannot redirect HTTP to HTTPS, and the application does not send a
+`Strict-Transport-Security` header. TLS terminates at the NLB, so the application sees every
+request as HTTP and does not mark the session cookie `Secure`. The pipeline smoke test still
+calls the load balancer over `http://`.
+
+**Risk:** A user who opens the site over `http://` sends login credentials and the session
+cookie in clear text. The session cookie can also leak over HTTP after an HTTPS login.
+
+**Current Mitigations:**
+
+* HTTPS is available with TLS 1.2+ on the custom domain.
+* Demo data only.
+
+**Remediation:** Remove port 80 from the Service, or move to an ALB (AWS Load Balancer
+Controller Ingress) with an HTTP-to-HTTPS redirect. Once all traffic is HTTPS, enable HSTS
+and set `server.servlet.session.cookie.secure=true`. Switch the smoke test to `https://` on
+the custom domain.
 
 **Owner:** Srushti
 

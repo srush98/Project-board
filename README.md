@@ -9,7 +9,7 @@ This web application displays lists of board games and their reviews. While anyo
 
 - Java 17
 - Spring Boot 4.1
-- Amazon Web Services(AWS) EC2
+- Amazon Web Services (AWS): EKS, Network Load Balancer, ACM
 - Thymeleaf
 - Thymeleaf Fragments
 - HTML5
@@ -37,7 +37,7 @@ This web application displays lists of board games and their reviews. While anyo
   - Non-members only can see the boardgame lists and reviews
   - Users can add board games and write reviews
   - Managers can edit and delete the reviews
-- Deployed the application on AWS EC2
+- Deployed on Amazon EKS and served over HTTPS on a custom domain (TLS 1.2+)
 - JUnit test framework for unit testing
 - Spring MVC best practices to segregate views, controllers, and database packages
 - JDBC for database connectivity and interaction
@@ -84,6 +84,17 @@ The `Jenkinsfile` builds, tests and scans the application (SonarQube, Trivy, Kub
 deploying it to Amazon EKS using the manifests in `k8s/`. See [SECURITY.md](SECURITY.md) for the
 security controls, accepted risks and known gaps.
 
+### HTTPS
+
+The `boardgame` Service ([k8s/service.yaml](k8s/service.yaml)) creates an AWS Network Load
+Balancer that terminates TLS on port 443 with an ACM certificate, using the
+`ELBSecurityPolicy-TLS13-1-2-2021-06` policy (TLS 1.3 and 1.2 only). The custom domain points
+at the load balancer's hostname. Traffic from the load balancer to the pods on port 8080 is
+plain HTTP inside the VPC.
+
+Port 80 is still open and serves plain HTTP without a redirect; always use the `https://` URL.
+See the KAN-7 follow-up in [SECURITY.md](SECURITY.md).
+
 ## Upgrade history
 
 | Version | Notes |
@@ -92,3 +103,4 @@ security controls, accepted risks and known gaps.
 | Spring Boot 3.5 | `javax.*` to `jakarta.*` migration; `WebSecurityConfigurerAdapter` replaced with a `SecurityFilterChain` bean |
 | Spring Boot 4.0 → 4.1.2, Java 17 | Modular starters (`spring-boot-starter-webmvc`, test starters); resolves the CVEs tracked in KAN-2 |
 | Security hardening (KAN-5) | CSRF protection and `X-Frame-Options` re-enabled (Spring Security defaults) |
+| HTTPS (KAN-7) | TLS termination at the load balancer with an ACM certificate on a custom domain |
